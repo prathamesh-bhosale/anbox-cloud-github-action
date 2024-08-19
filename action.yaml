@@ -44,12 +44,27 @@ runs:
 
       sudo anbox-cloud-appliance init --auto
 
+      # FIXME Until preseed support is correctly working we need to manually
+      # change the public address here to make sure instances can be streamed
+      # within the runner
+      addr="$(sudo grep 'listen-address:' /var/snap/anbox-cloud-appliance/common/config.yaml |
+        head -n 1 | cut -d: -f2 | xargs)"
+      sudo sed -i "s/public-address:.*/public-address: $addr/g" \
+        /var/snap/anbox-cloud-appliance/common/config.yaml
+      sudo sed -i "s/location:.*/location: \"\"/g" \
+        /var/snap/anbox-cloud-appliance/common/config.yaml
+      sudo sed -i "s/base-uri:.*/base-uri: https:\/\/$addr/g" \
+        /var/snap/anbox-cloud-appliance/common/config.yaml
+      sudo anbox-cloud-appliance internal post-refresh
+
       # FIXME Manually allow access for the current user on the CLI as --auto
       # does not do this and --preseed is not working with 1.23.0
       uid="$(id -u)"
       sudo sed -i "s/allowed-uids.*/allowed-uids: [0, $uid]/g" \
         /var/snap/anbox-cloud-appliance/common/ams/server/settings.yaml
-      sudo snap restart anbox-cloud-appliance.ams
+
+      # Now restart all services to apply changes we made above
+      sudo snap restart anbox-cloud-appliance
 
       # Wait for AMS to be back up
       ready=false
