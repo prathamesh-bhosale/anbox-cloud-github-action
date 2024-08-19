@@ -42,39 +42,16 @@ runs:
       # seem to update dependency information correctly
       sudo depmod -a
 
-      sudo anbox-cloud-appliance init --auto
-
-      # FIXME Until preseed support is correctly working we need to manually
-      # change the public address here to make sure instances can be streamed
-      # within the runner
-      addr="$(sudo grep 'listen-address:' /var/snap/anbox-cloud-appliance/common/config.yaml |
-        head -n 1 | cut -d: -f2 | xargs)"
-      sudo sed -i "s/public-address:.*/public-address: $addr/g" \
-        /var/snap/anbox-cloud-appliance/common/config.yaml
-      sudo sed -i "s/location:.*/location: \"\"/g" \
-        /var/snap/anbox-cloud-appliance/common/config.yaml
-      sudo sed -i "s/base-uri:.*/base-uri: https:\/\/$addr/g" \
-        /var/snap/anbox-cloud-appliance/common/config.yaml
-      sudo anbox-cloud-appliance internal post-refresh
-
-      # FIXME Manually allow access for the current user on the CLI as --auto
-      # does not do this and --preseed is not working with 1.23.0
       uid="$(id -u)"
-      sudo sed -i "s/allowed-uids.*/allowed-uids: [0, $uid]/g" \
-        /var/snap/anbox-cloud-appliance/common/ams/server/settings.yaml
-
-      # Now restart all services to apply changes we made above
-      sudo snap restart anbox-cloud-appliance
-
-      # Wait for AMS to be back up
-      ready=false
-      for (( n=0; n<=5; n++ )); do
-        if amc info ; then
-          ready=true
-          break
-        fi
-        sleep 5
-      done
-      if [ "$ready" = false ]; then
-        exit 1
-      fi
+      addr="$(ip -4 -j route get 2.2.2.2 | jq -r '.[] | .prefsrc')"
+      cat << EOF | sudo anbox-cloud-appliance init --preseed
+      network:
+        listen-address: $addr
+      lxd:
+        # We use 30GB here which should give us enough space
+        storage-size: 32212254720
+        storage-pool: anbox-cloud
+      ams:
+        api:
+          allowed-uids: [0, $uid]
+      EOF
