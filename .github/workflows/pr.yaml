@@ -1,0 +1,36 @@
+name: Test action
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  smoke:
+    name: Minimal smoke tests for the action
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+    - name: Setup Anbox Cloud
+      uses: ./
+    - name: Restore cached images
+      uses: actions/cache/restore@v4
+      with:
+        path: images
+        key: anbox-images-amd64
+    - name: Import cached images
+      run: |
+        amc image add jammy:android13:amd64 ./images/android13.tar.xz
+    - name: Tune configuration
+      run: |
+        amc config set container.security_updates false
+    - name: Create Android instance
+      id: create-instance
+      run: |
+        set -x
+        id="$(amc launch -r -s adb jammy:android13:amd64)"
+        amc wait -c status=running "$id"
+        echo "id=$id" >> "$GITHUB_OUTPUT"
+    - name: Access Android over ADB
+      run: |
+        sudo apt install -y adb
+        id=${{ steps.create-instance.outputs.id }}
+        addr="$(amc show "$id" --format=json | jq -r .network.address)"
+        adb connect "$addr":5559
+        test "$(adb shell getprop ro.product.model)" = Anbox
