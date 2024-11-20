@@ -1,0 +1,61 @@
+name: Setup Anbox Cloud
+description: |
+  Setup Anbox Cloud on a Github runner for running integration tests against
+  containerized or virtualized Android instances.
+
+  See https://anbox-cloud.io/docs for more details
+inputs:
+  channel:
+    default: latest/stable
+    description: Snap channel of the anbox-cloud-appliance snap to use
+    required: false
+    type: string
+  ubuntu-pro-token:
+    default: ''
+    description: Ubuntu Pro token to setup access to official image server
+    require: false
+    type: string
+
+runs:
+  using: composite
+  steps:
+  - name: Attach to Ubuntu Pro
+    if: ${{ inputs.ubuntu-pro-token }}
+    shell: bash
+    run: |
+      sudo pro attach ${{ inputs.ubuntu-pro-token }}
+      sudo pro enable anbox-cloud --access-only
+  - name: Setup LXD
+    uses: canonical/setup-lxd@54a5806e490d92e207b57183cf111ed54bbdeff4
+    with:
+      channel: 5.0/stable
+  - name: Install necessary snap packages
+    shell: bash
+    run: |
+      sudo snap install --channel=${{ inputs.channel }} anbox-cloud-appliance
+  - name: Initialize Anbox Cloud
+    shell: bash
+    run: |
+      anbox-cloud-appliance prepare-node-script | sudo bash -ex
+
+      # FIXME workaround an issue with latest kernel packages which don't
+      # seem to update dependency information correctly
+      sudo depmod -a
+
+      uid="$(id -u)"
+      addr="$(ip -4 -j route get 2.2.2.2 | jq -r '.[] | .prefsrc')"
+      cat << EOF | sudo anbox-cloud-appliance init --preseed
+      network:
+        # We set both listen and public address to the same local IP address
+        # as otherwise the appliance will attempt to determine the public
+        # address through the use of STUN.
+        listen-address: $addr
+        public-address: $addr
+      lxd:
+        # We use 30GB here which should give us enough space
+        storage-size: 32212254720
+        storage-pool: anbox-cloud
+      ams:
+        api:
+          allowed-uids: [0, $uid]
+      EOF
